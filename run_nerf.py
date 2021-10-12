@@ -435,17 +435,10 @@ def raw2outputs(raw, z_vals, rays_d, raw_noise_std=0, white_bkgd=False, pytest=F
     final_sum = 1 - weights_depth
     weights_depth = torch.cat([weights, final_sum], dim=-1)
 
-    # _, idx = torch.max(weights_depth, dim=1)
-
     z_vals_depth = torch.cat([z_vals, torch.ones((z_vals.shape[0], 1)).to(z_vals.device) * 1e5], dim=-1)
 
-    # if not render_image:
-    #     z_vals_depth = z_vals_depth * torch.norm(rays_d, dim=-1, keepdim=True)[:, None]
 
     depth_map = torch.sum(weights_depth[..., :-1] * z_vals_depth[..., :-1], -1)
-    # import pdb
-    # pdb.set_trace()
-    # depth_map = torch.gather(z_vals_depth, 1, idx[:, None]) * torch.norm(rays_d[...,None,:], dim=-1)
 
     disp_map = 1./(1 + depth_map)
 
@@ -520,10 +513,6 @@ def render_rays(ray_batch,
         z_vals = lower + (upper - lower) * t_rand
 
     pts = torch.cat([rays_o[...,None,:3] + rays_d[...,None,:] * z_vals[...,:,None], rays_o[...,None, 3:].repeat(1, z_vals.size(-1), 1)], dim=-1) # [N_rays, N_samples, 3]
-    # pts = torch.cat([rays_o[...,None,:3] + rays_d[...,None,:] * z_vals[...,:,None]], dim=-1) # [N_rays, N_samples, 3]
-    # print("x min max ", pts[:, :, 0].min(), pts[:, :, 0].max())
-    # print("y min max ", pts[:, :, 1].min(), pts[:, :, 1].max())
-    # print("z min max ", pts[:, :, 2].min(), pts[:, :, 2].max())
 
 #     raw = run_network(pts)
     raw = network_query_fn(pts, viewdirs, network_fn)
@@ -532,10 +521,6 @@ def render_rays(ray_batch,
 
     rgb_map, disp_map, acc_map, weights, depth_map_coarse, alpha = raw2outputs(raw, z_vals, rays_d, raw_noise_std, white_bkgd, pytest=pytest, render_image=kwargs['render_image'])
     weights_orig = weights
-    # import pdb
-    # pdb.set_trace()
-    # print(weights)
-    # print(raw)
 
     max_idx = weights.max(dim=1)[1]
     max_idx = max_idx[:, None, None].repeat(1, 1, 4)
@@ -543,9 +528,6 @@ def render_rays(ray_batch,
     max_pt = pts[:, :, :3].max(dim=0)[0].max(dim=0)[0]
     min_pt = pts[:, :, :3].min(dim=0)[0].min(dim=0)[0]
 
-    # import pdb
-    # pdb.set_trace()
-    # print("here")
 
     if N_importance > 0:
 
@@ -556,10 +538,7 @@ def render_rays(ray_batch,
         z_samples = z_samples.detach()
 
         z_vals, _ = torch.sort(torch.cat([z_vals, z_samples], -1), -1)
-        # z_vals = torch.sort(z_samples, -1)[0]
-        # pts = rays_o[...,None,:] + rays_d[...,None,:] * z_vals[...,:,None] # [N_rays, N_samples + N_importance, 3]
         pts = torch.cat([rays_o[...,None,:3] + rays_d[...,None,:] * z_vals[...,:,None], rays_o[...,None, 3:].repeat(1, z_vals.size(-1), 1)], dim=-1) # [N_rays, N_samples, 3]
-        # pts = torch.cat([rays_o[...,None,:3] + rays_d[...,None,:] * z_vals[...,:,None]], dim=-1) # [N_rays, N_samples, 3]
 
         run_fn = network_fn if network_fine is None else network_fine
 #         raw = run_network(pts, fn=run_fn)
@@ -751,140 +730,8 @@ def train():
             far = 8.
         args.white_bkgd = False
 
-    elif args.dataset_type == 'dynamic_multiview':
-
-        images, poses, render_poses, render_timesteps, hwf, i_split, timesteps, = load_dynamic_multiview_data(args.datadir, args, args.half_res, args.testskip)
-
-        i_train, i_val, i_test = i_split
-
-        near = 0.
-        far = 8.
-        args.white_bkgd = False
-
-        if args.pouring:
-            near = 0.
-            far = 20.
-        else:
-            near = 0.
-            far = 8.
-        args.white_bkgd = False
-
-        # if args.white_bkgd:
-        #     images = images[...,:3]*images[...,-1:] + (1.-images[...,-1:])
-        # else:
-        #     images = images[...,:3]
-
-    elif args.dataset_type == 'kitti':
-
-        if args.optical_flow:
-            images, poses, render_poses, render_timesteps, hwf, i_split, timesteps, keypoints, keypoints_timestep, keypoints_pose = load_kitti_data(args.datadir, args, args.half_res, args.testskip)
-            keypoints = np.array(keypoints)
-            keypoints_timestep = np.array(keypoints_timestep)
-            keypoints_pose = np.array(keypoints_pose)
-        elif args.scene_flow:
-            images, poses, render_poses, render_timesteps, hwf, i_split, timesteps, flow_ims = load_kitti_data(args.datadir, args, args.half_res, args.testskip)
-        else:
-            images, poses, render_poses, render_timesteps, hwf, i_split, timesteps, = load_kitti_data(args.datadir, args, args.half_res, args.testskip)
-        print('Loaded blender', images.shape, render_poses.shape, hwf, args.datadir)
-        i_train, i_val, i_test = i_split
-
-        near = 0.
-        far = 8.
-        args.white_bkgd = False
-
-        if args.white_bkgd:
-            images = images[...,:3]*images[...,-1:] + (1.-images[...,-1:])
-        else:
-            images = images[...,:3]
-
-
-    elif args.dataset_type == 'ayush':
-
-        # images, poses, bds, render_poses, render_timesteps, hwf, i_split, timesteps, = load_ayush_data(args.datadir, args, args.half_res, args.testskip)
-        if args.optical_flow:
-            bds, images, poses, render_poses, render_timesteps, hwf, i_split, timesteps, keypoints, keypoints_timestep, keypoints_pose, depths = load_ayush_data(args)
-            keypoints = np.array(keypoints)
-            keypoints_timestep = np.array(keypoints_timestep)
-            keypoints_pose = np.array(keypoints_pose)
-        elif args.scene_flow or args.velocity:
-            bds, images, poses, render_poses, render_timesteps, hwf, i_split, timesteps, locations, locations_timestep, bounds, depths = load_ayush_data(args)
-            locations = np.array(locations)
-            locations_timestep = np.array(locations_timestep)
-        else:
-            bds, images, poses, render_poses, render_timesteps, hwf, i_split, timesteps, depths = load_ayush_data(args)
-        print('Loaded ayush', images.shape, render_poses.shape, hwf, args.datadir)
-        i_train, i_val, i_test = i_split
-
-        near = bds.min() * 0.9
-        far = bds.max()
-        args.white_bkgd = False
-
-        if args.white_bkgd:
-            images = images[...,:3]*images[...,-1:] + (1.-images[...,-1:])
-        else:
-            images = images[...,:3]
-
-    elif args.dataset_type == 'dynamic':
-
-        # images, poses, render_poses, render_timesteps, hwf, i_split, timesteps, = load_dynamic_data(args.datadir, args, args.half_res, args.testskip)
-        if args.optical_flow:
-            bds, images, poses, render_poses, render_timesteps, hwf, i_split, timesteps, keypoints, keypoints_timestep, keypoints_pose, depths = load_dynamic_data(args)
-            keypoints = np.array(keypoints)
-            keypoints_timestep = np.array(keypoints_timestep)
-            keypoints_pose = np.array(keypoints_pose)
-        elif args.scene_flow or args.velocity:
-            bds, images, poses, render_poses, render_timesteps, hwf, i_split, timesteps, locations, locations_timestep, bounds, depths = load_dynamic_data(args)
-            locations = np.array(locations)
-            locations_timestep = np.array(locations_timestep)
-        else:
-            bds, images, poses, render_poses, render_timesteps, hwf, i_split, timesteps, depths = load_dynamic_data(args)
-        # print('Loaded ayush', images.shape, render_poses.shape, hwf, args.datadir)
-        i_train, i_val, i_test = i_split
-        near, far = 0.8 * bds.min(), bds.max()
-
-        bds = bds
-
-        args.white_bkgd = False
-
-        # if args.white_bkgd:
-        #     images = images[...,:3]*images[...,-1:] + (1.-images[...,-1:])
-        # else:
-        #     images = images[...,:3]
-
-        # dataset = DynamicDataset(args.datadir, args)
-
-        # train_dataloader = DataLoader(dataset, num_workers=16, batch_size=32, shuffle=True, pin_memory=False, collate_fn=dataset.collate_fn, drop_last=False)
-        # train_dataloader = DataLoader(dataset, num_workers=0, batch_size=64, shuffle=True, pin_memory=False, collate_fn=dataset.collate_fn, drop_last=False)
-        # render_poses = dataset.render_poses
-        # render_timesteps = dataset.render_timesteps
-        # render_images = dataset.render_images
-        # hwf = dataset.hwf
-        # near = dataset.bound_min
-        # far = dataset.bound_max
-
-
-    elif args.dataset_type == 'deepvoxels':
-
-        images, poses, render_poses, hwf, i_split = load_dv_data(scene=args.shape,
-                                                                 basedir=args.datadir,
-                                                                 testskip=args.testskip)
-
-        print('Loaded deepvoxels', images.shape, render_poses.shape, hwf, args.datadir)
-        i_train, i_val, i_test = i_split
-
-        hemi_R = np.mean(np.linalg.norm(poses[:,:3,-1], axis=-1))
-        near = hemi_R-1.
-        far = hemi_R+1.
-
 
     elif args.dataset_type == 'gibson':
-
-#         dataset = GibsonDataset(args.datadir, args)
-#         train_dataloader = DataLoader(dataset, num_workers=16, batch_size=32, shuffle=True, pin_memory=False, collate_fn=dataset.collate_fn, drop_last=False)
-#         render_poses = dataset.render_poses
-#         render_timesteps = dataset.render_timesteps
-#         hwf = dataset.hwf
-
         if args.optical_flow:
             images, poses, render_poses, render_timesteps, hwf, i_split, timesteps, keypoints, keypoints_timestep, keypoints_pose = load_gibson_data(args.datadir, args, args.half_res, args.testskip)
             keypoints = np.array(keypoints)
@@ -902,138 +749,6 @@ def train():
 
         near = 0.0
         far = 8.
-        args.white_bkgd = False
-
-        if args.white_bkgd:
-            images = images[...,:3]*images[...,-1:] + (1.-images[...,-1:])
-        else:
-            images = images[...,:3]
-
-    elif args.dataset_type == 'video':
-
-#         dataset = GibsonDataset(args.datadir, args)
-#         train_dataloader = DataLoader(dataset, num_workers=16, batch_size=32, shuffle=True, pin_memory=False, collate_fn=dataset.collate_fn, drop_last=False)
-#         render_poses = dataset.render_poses
-#         render_timesteps = dataset.render_timesteps
-#         hwf = dataset.hwf
-
-        if args.optical_flow:
-            bds, images, poses, render_poses, render_timesteps, hwf, i_split, timesteps, keypoints, keypoints_timestep, keypoints_pose, depths = load_video_data(args)
-            keypoints = np.array(keypoints)
-            keypoints_timestep = np.array(keypoints_timestep)
-            keypoints_pose = np.array(keypoints_pose)
-        elif args.scene_flow or args.velocity:
-            bds, images, poses, render_poses, render_timesteps, hwf, i_split, timesteps, locations, locations_timestep, bounds, depths = load_video_data(args)
-            locations = np.array(locations)
-            locations_timestep = np.array(locations_timestep)
-        else:
-            bds, images, poses, render_poses, render_timesteps, hwf, i_split, timesteps, depths = load_video_data(args)
-        print('Loaded blender', images.shape, render_poses.shape, hwf, args.datadir)
-#         i_train, i_val, i_test = i_split
-        i_train = i_split[0]
-        near, far = bds[0, 0], bds[0, 1]
-
-        # near = 0.0
-        # far = 8.
-        args.white_bkgd = False
-
-        if args.white_bkgd:
-            images = images[...,:3]*images[...,-1:] + (1.-images[...,-1:])
-        else:
-            images = images[...,:3]
-
-    elif args.dataset_type == 'person':
-
-#         dataset = GibsonDataset(args.datadir, args)
-#         train_dataloader = DataLoader(dataset, num_workers=16, batch_size=32, shuffle=True, pin_memory=False, collate_fn=dataset.collate_fn, drop_last=False)
-#         render_poses = dataset.render_poses
-#         render_timesteps = dataset.render_timesteps
-#         hwf = dataset.hwf
-
-        if args.optical_flow:
-            bds, images, poses, render_poses, render_timesteps, hwf, i_split, timesteps, keypoints, keypoints_timestep, keypoints_pose, depths = load_video_person(args)
-            keypoints = np.array(keypoints)
-            keypoints_timestep = np.array(keypoints_timestep)
-            keypoints_pose = np.array(keypoints_pose)
-        elif args.scene_flow or args.velocity:
-            bds, images, poses, render_poses, render_timesteps, hwf, i_split, timesteps, locations, locations_timestep, bounds, depths = load_video_person(args)
-            locations = np.array(locations)
-            locations_timestep = np.array(locations_timestep)
-        else:
-            bds, images, poses, render_poses, render_timesteps, hwf, i_split, timesteps, depths = load_video_person(args)
-        print('Loaded blender', images.shape, render_poses.shape, hwf, args.datadir)
-#         i_train, i_val, i_test = i_split
-        i_train = i_split[0]
-        near, far = 0.8 * bds.min(), bds.max()
-
-        # near = 0.0
-        # far = 8.
-        args.white_bkgd = False
-
-        if args.white_bkgd:
-            images = images[...,:3]*images[...,-1:] + (1.-images[...,-1:])
-        else:
-            images = images[...,:3]
-
-    elif args.dataset_type == 'kid':
-
-#         dataset = GibsonDataset(args.datadir, args)
-#         train_dataloader = DataLoader(dataset, num_workers=16, batch_size=32, shuffle=True, pin_memory=False, collate_fn=dataset.collate_fn, drop_last=False)
-#         render_poses = dataset.render_poses
-#         render_timesteps = dataset.render_timesteps
-#         hwf = dataset.hwf
-
-        if args.optical_flow:
-            bds, images, poses, render_poses, render_timesteps, hwf, i_split, timesteps, keypoints, keypoints_timestep, keypoints_pose, depths = load_video_kid(args)
-            keypoints = np.array(keypoints)
-            keypoints_timestep = np.array(keypoints_timestep)
-            keypoints_pose = np.array(keypoints_pose)
-        elif args.scene_flow or args.velocity:
-            bds, images, poses, render_poses, render_timesteps, hwf, i_split, timesteps, locations, locations_timestep, bounds, depths = load_video_kid(args)
-            locations = np.array(locations)
-            locations_timestep = np.array(locations_timestep)
-        else:
-            bds, images, poses, render_poses, render_timesteps, hwf, i_split, timesteps, depths = load_video_kid(args)
-        print('Loaded blender', images.shape, render_poses.shape, hwf, args.datadir)
-#         i_train, i_val, i_test = i_split
-        i_train = i_split[0]
-        near, far = 0.8 * bds.min(), bds.max()
-
-        # near = 0.0
-        # far = 8.
-        args.white_bkgd = False
-
-        if args.white_bkgd:
-            images = images[...,:3]*images[...,-1:] + (1.-images[...,-1:])
-        else:
-            images = images[...,:3]
-
-    elif args.dataset_type == 'dog':
-
-#         dataset = GibsonDataset(args.datadir, args)
-#         train_dataloader = DataLoader(dataset, num_workers=16, batch_size=32, shuffle=True, pin_memory=False, collate_fn=dataset.collate_fn, drop_last=False)
-#         render_poses = dataset.render_poses
-#         render_timesteps = dataset.render_timesteps
-#         hwf = dataset.hwf
-
-        if args.optical_flow:
-            bds, images, poses, render_poses, render_timesteps, hwf, i_split, timesteps, keypoints, keypoints_timestep, keypoints_pose, depths = load_video_dog(args)
-            keypoints = np.array(keypoints)
-            keypoints_timestep = np.array(keypoints_timestep)
-            keypoints_pose = np.array(keypoints_pose)
-        elif args.scene_flow or args.velocity:
-            bds, images, poses, render_poses, render_timesteps, hwf, i_split, timesteps, locations, locations_timestep, bounds, depths = load_video_dog(args)
-            locations = np.array(locations)
-            locations_timestep = np.array(locations_timestep)
-        else:
-            bds, images, poses, render_poses, render_timesteps, hwf, i_split, timesteps, depths = load_video_dog(args)
-        print('Loaded blender', images.shape, render_poses.shape, hwf, args.datadir)
-#         i_train, i_val, i_test = i_split
-        i_train = i_split[0]
-        near, far = 0.8 * bds.min(), bds.max()
-
-        # near = 0.0
-        # far = 8.
         args.white_bkgd = False
 
         if args.white_bkgd:
@@ -1090,12 +805,12 @@ def train():
     if args.velocity:
         model_fine = render_kwargs_train['network_fine']
         velocity_module = model_fine.velocity_module
-        # rtol = 0.001
-        # atol = 0.0001
+        rtol = 0.001
+        atol = 0.0001
         # rtol = 1e-3
         # atol = 1e-4
-        rtol = 1e-4
-        atol = 1e-5
+        # rtol = 1e-4
+        # atol = 1e-5
         ode_solver = "dopri5"
         # odeint = odeint_adjoint
 
@@ -1148,18 +863,6 @@ def train():
             loc_t_before, loc_t_after = locations_timestep[:, None, :1], locations_timestep[:, None, 1:]
             bounds = np.array(bounds)
 
-            # import pdb
-            # pdb.set_trace()
-            # print(bounds.shape)
-        # elif args.scene_flow and args.dataset_type == "kitti":
-        #     timesteps_flow = timesteps
-        #     scene_flow = flow_ims
-        #     start_cast = rgb_scene[:, 0]
-        #     cast_dir = rgb_scene[:, 1]
-        #     import pdb
-        #     pdb.set_trace()
-        #     print(flow_ims)
-        #     print(rays)
 
 
         # Generate constraints for timestep flow
@@ -1250,25 +953,6 @@ def train():
                 batch_rays = torch.stack([rays_o, rays_d], 0)
                 target_s = target[select_coords[:, 0], select_coords[:, 1]]  # (N_rand, 3)
 
-#     for _ in range(10000):
-#         for rays_rgb, camera_depth, loc_before, loc_after, loc_t_before, loc_t_after, bounds in train_dataloader:
-#             rays_rgb = rays_rgb.to(device)
-#             camera_depth = camera_depth.to(device)
-#             loc_before = loc_before.to(device)
-#             loc_after = loc_after.to(device)
-#             loc_t_before = loc_t_before.to(device)
-#             loc_t_after = loc_t_after.to(device)
-#             bounds = bounds.to(device)
-
-#             time0 = time.time()
-#             batch = rays_rgb
-#             batch = torch.transpose(batch, 0, 1)
-#             batch_rays, target_s = batch[:2], batch[2, :, :3]
-
-            #####  Core optimization loop  #####
-            # import pdb
-            # pdb.set_trace()
-            # print(render_kwargs_train)
 
         rgb, disp, acc, extras = render(H, W, focal, chunk=args.chunk, rays=batch_rays,
                                                 verbose=i < 10, retraw=True,
@@ -1285,129 +969,32 @@ def train():
             # loc_after_i = loc_after[ix, :, None] + loc_offset
             # t_batch = loc_t_before[ix, None, :, :].repeat(loc_offset.size(1), 1, 1)
 
-            if args.dataset_type in ["dog", "ayush", "dynamic", "person", "video", "kid"]:
-                network_query_fn_pt = render_kwargs_train['network_query_fn_pt']
-                raw2alpha = lambda raw, dists, act_fn=F.relu: 1.-torch.exp(-act_fn(raw) * dists)
+            loc_offset = (torch.rand(loc_before.size(1), loc_before.size(2)).to(bounds.device) - 0.5) * bounds[ix]
+            loc_before_i = loc_before[ix, :] + loc_offset
+            loc_after_i = loc_after[ix, :] + loc_offset
+            t_batch = loc_t_before[ix]
 
-                loc_before_i = loc_before[ix, :].to(device)
-                loc_after_i = loc_after[ix, :].to(device)
+            # import pdb
+            # pdb.set_trace()
+            # loc_offset = (torch.rand(loc_before.size(0), loc_before.size(1)).to(bounds.device) - 0.5) * bounds[ix]
+            # loc_before_i = loc_before + loc_offset
+            # loc_after_i = loc_after + loc_offset
+            # t_batch = loc_t_before
 
-                select_idx = torch.randperm(loc_before_i.size(0))[:512]
-                rays_o_before, rays_d_before = loc_before_i[select_idx, :3], loc_before_i[select_idx, 3:]
-                rays_o_after, rays_d_after = loc_after_i[select_idx, :3], loc_after_i[select_idx, 3:]
-                t_batch = torch.stack([loc_t_before[ix][select_idx], loc_t_after[ix][select_idx]], dim=0).view(-1)
+            loc_before_i = loc_before_i.view(-1, loc_before_i.size(-1))
+            loc_after_i = loc_after_i.view(-1, loc_after_i.size(-1))
 
-                bounds_i = bounds[ix][select_idx]
+            loc_before_i = loc_before_i.to(bounds.device)
+            loc_after_i = loc_after_i.to(bounds.device)
+            t_step = t_step.to(bounds.device)
+            t_batch = t_batch.view(-1, t_batch.size(-1))
+            # t_batch = t_batch.view(-1, 1)
+            # t_batch = t_batch.view(-1)
+            f_options = {'T_batch': t_batch}
+            ode_solution = odeint_adjoint(velocity_module, loc_before_i, t_step, method=ode_solver, rtol=rtol, atol=atol, options={}, f_options=f_options)
 
-                rays_o = torch.cat([rays_o_before, rays_o_after], dim=0)
-                rays_d = torch.cat([rays_d_before, rays_d_after], dim=0)
-
-                t_vals = torch.linspace(0., 1., steps=args.N_samples).to(rays_d.device)
-                z_vals = near * (1.-t_vals) + far * (t_vals)
-                model = render_kwargs_train['network_fn']
-                model_fine = render_kwargs_train['network_fine']
-                N_rays = rays_o.shape[0]
-                z_vals = z_vals.expand([N_rays, args.N_samples])
-
-                mids = .5 * (z_vals[...,1:] + z_vals[...,:-1])
-                upper = torch.cat([mids, z_vals[...,-1:]], -1)
-                lower = torch.cat([z_vals[...,:1], mids], -1)
-                t_rand = torch.rand(z_vals.shape).to(rays_d.device)
-                z_vals = lower + (upper - lower) * t_rand
-
-                dists = z_vals[...,1:] - z_vals[...,:-1]
-                dists = torch.cat([dists, torch.Tensor([1e10]).expand(dists[...,:1].shape).to(dists.device)], -1)
-                dists = dists * torch.norm(rays_d[...,None,:], dim=-1)
-
-                pts = torch.cat([rays_o[:, None, :3] + rays_d[:, None, :] * z_vals[..., :, None], t_batch[:, None, None].repeat(1, args.N_samples, 1)], dim=-1)
-
-                raw = network_query_fn_pt(pts, model)
-                alpha = raw2alpha(raw[...,3], dists)  # [N_rays, N_samples]
-
-                weights = alpha * torch.cumprod(torch.cat([torch.ones((alpha.shape[0], 1)).to(dists.device), 1.-alpha + 1e-10], -1), -1)[:, :-1]
-
-                z_vals_mid = .5 * (z_vals[...,1:] + z_vals[...,:-1])
-                z_samples = sample_pdf(z_vals_mid, weights[...,1:-1], args.N_samples, det=False)
-
-                z_samples = z_samples.detach()
-
-                z_vals, _ = torch.sort(torch.cat([z_vals, z_samples], -1), -1)
-
-                dists = z_vals[...,1:] - z_vals[...,:-1]
-                dists = torch.cat([dists, torch.Tensor([1e10]).expand(dists[...,:1].shape).to(dists.device)], -1)  # [N_rays, N_samples]
-
-                dists = dists * torch.norm(rays_d[...,None,:], dim=-1)
-                pts = torch.cat([rays_o[:, None, :3] + rays_d[:, None, :] * z_vals[..., :, None], t_batch[:, None, None].repeat(1, dists.size(1), 1)], dim=-1)
-
-                raw = network_query_fn_pt(pts, model_fine)
-                raws = raw[..., 3]
-                alpha = raw2alpha(raw[...,3], dists)  # [N_rays, N_samples]
-                weights = alpha * torch.cumprod(torch.cat([torch.ones((alpha.shape[0], 1)).to(dists.device), 1.-alpha + 1e-10], -1), -1)[:, :-1]
-                surface_pt = (weights[:, :, None] * pts).sum(dim=1)
-
-                surface_pt = surface_pt.detach()
-                s = surface_pt.size()
-
-                nrays = s[0] // 2
-
-                loc_before_i = surface_pt[:nrays, :3].detach()
-                loc_after_i = surface_pt[nrays:, :3].detach()
-
-                loc_offset = (torch.rand(*loc_before_i.size()).to(bounds.device) - 0.5) * bounds_i
-
-                loc_before_i = loc_before_i + loc_offset
-                loc_after_i = loc_after_i + loc_offset
-
-                t_batch = t_batch[:nrays].view(-1, 1)
-
-                f_options = {'T_batch': t_batch, 'reverse': reverse}
-                ode_solution = odeint_adjoint(velocity_module, loc_before_i, t_step, method=ode_solver, rtol=rtol, atol=atol, options={}, f_options=f_options)
-
-                diff = torch.abs(loc_after_i - loc_before_i).mean(dim=-1)
-                mask_static = diff < 0.01
-
-                loc_after_i[mask_static] = loc_before_i[mask_static]
-
-                dist = torch.norm(ode_solution[1:2] - loc_after_i, p=2, dim=2).squeeze()
-                mask_static = mask_static.float()
-                # dist = dist * mask_static + dist * (1 - mask_static) * 10
-
-                # Enforce correspondance across timesteps
-
-                if args.no_optical_flow:
-                    scene_loss = 0.0 * dist.mean()
-                else:
-                    scene_loss = 100.0 * dist.mean()
-                # scene_loss = 0.0
-            else:
-                loc_offset = (torch.rand(loc_before.size(1), loc_before.size(2)).to(bounds.device) - 0.5) * bounds[ix]
-                loc_before_i = loc_before[ix, :] + loc_offset
-                loc_after_i = loc_after[ix, :] + loc_offset
-                t_batch = loc_t_before[ix]
-
-                # import pdb
-                # pdb.set_trace()
-                # loc_offset = (torch.rand(loc_before.size(0), loc_before.size(1)).to(bounds.device) - 0.5) * bounds[ix]
-                # loc_before_i = loc_before + loc_offset
-                # loc_after_i = loc_after + loc_offset
-                # t_batch = loc_t_before
-
-                loc_before_i = loc_before_i.view(-1, loc_before_i.size(-1))
-                loc_after_i = loc_after_i.view(-1, loc_after_i.size(-1))
-
-                loc_before_i = loc_before_i.to(bounds.device)
-                loc_after_i = loc_after_i.to(bounds.device)
-                t_step = t_step.to(bounds.device)
-                t_batch = t_batch.view(-1, t_batch.size(-1))
-                # t_batch = t_batch.view(-1, 1)
-                # t_batch = t_batch.view(-1)
-                f_options = {'T_batch': t_batch}
-                ode_solution = odeint_adjoint(velocity_module, loc_before_i, t_step, method=ode_solver, rtol=rtol, atol=atol, options={}, f_options=f_options)
-
-                # Enforce correspondance across timesteps
-                scene_loss = 10.0 * torch.norm(ode_solution[1:2] - loc_after_i, p=2, dim=2).mean()
-                # scene_loss = 0.0
-            #scene_loss = torch.norm(ode_solution[1:2] - loc_after_i, p=2, dim=2).mean()
+            # Enforce correspondance across timesteps
+            scene_loss = 10.0 * torch.norm(ode_solution[1:2] - loc_after_i, p=2, dim=2).mean()
 
             # Generate rays to cast consistency over
             network_query_fn_pt = render_kwargs_train['network_query_fn_pt']
@@ -1558,29 +1145,27 @@ def train():
 
             raw2alpha = lambda raw, dists, act_fn=F.relu: 1.-torch.exp(-act_fn(raw) * dists)
 
-            if 1:
+            raw = raw.view(-1, rays)
+            raw_corr = raw_corr.view(-1, rays)
+            raw_coarse = raw_coarse.view(-1, rays)
+            raw_corr_coarse = raw_corr_coarse.view(-1, rays)
 
-                raw = raw.view(-1, rays)
-                raw_corr = raw_corr.view(-1, rays)
-                raw_coarse = raw_coarse.view(-1, rays)
-                raw_corr_coarse = raw_corr_coarse.view(-1, rays)
+            raw = torch.cat([raw, raw_coarse], dim=0)
+            raw_corr = torch.cat([raw_corr, raw_corr_coarse], dim=0)
 
-                raw = torch.cat([raw, raw_coarse], dim=0)
-                raw_corr = torch.cat([raw_corr, raw_corr_coarse], dim=0)
+            if args.depth_loss:
+                depth_loss = torch.abs(raw - raw_corr).mean()
+                depth_loss = depth_loss + torch.abs(raw_coarse - raw_corr_coarse).mean()
 
-                if args.depth_loss:
-                    depth_loss = torch.abs(raw - raw_corr).mean()
-                    depth_loss = depth_loss + torch.abs(raw_coarse - raw_corr_coarse).mean()
+                # dists = z_vals[...,1:] - z_vals[...,:-1]
 
-                    # dists = z_vals[...,1:] - z_vals[...,:-1]
+                # # Repeat for both fine and coarse depth
+                # dists = torch.cat([dists, dists], dim=0)
+                rays_d_depth = torch.cat([rays_d, rays_d], dim=0)
 
-                    # # Repeat for both fine and coarse depth
-                    # dists = torch.cat([dists, dists], dim=0)
-                    rays_d_depth = torch.cat([rays_d, rays_d], dim=0)
-
-                    scene_loss = 1e-2 * depth_loss + scene_loss
-                else:
-                    depth_loss = torch.zeros(1)
+                scene_loss = 1e-2 * depth_loss + scene_loss
+            else:
+                depth_loss = torch.zeros(1)
 
             # Computering losses for suface correspondance
             if args.surface_loss:
@@ -1860,66 +1445,6 @@ def train():
                 rgbs_gt = rgbs
 
                 with torch.no_grad():
-                    rgbs, disps, accs, mses = render_path(render_poses, render_timesteps, hwf, 8*1024, render_kwargs_test, gt_imgs=rgbs_gt, velocity=args.velocity, render_res=args.render_res)
-
-                if args.dataset_type == "kitti":
-                    moviebase = os.path.join(basedir, expname, '{}_spiral_{:06d}_'.format(expname, i))
-                    imageio.mimwrite(moviebase + 'rgb_linear.mp4', to8b(rgbs), fps=10, quality=8)
-                    imageio.mimwrite(moviebase + 'disp_linear.mp4', to8b((disps - np.min(disps)) / (np.max(disps) - np.min(disps))), fps=10, quality=8)
-                else:
-
-                    rgbs_new = []
-
-                    for rgb, im in zip(rgbs, rgbs_gt):
-                        rgb = np.concatenate([rgb, im], axis=1)
-                        rgbs_new.append(rgb)
-
-                    rgbs = rgbs_new
-                    moviebase = os.path.join(basedir, expname, '{}_spiral_{:06d}_'.format(expname, i))
-
-                    if args.ood_render:
-                        imageio.mimwrite(moviebase + 'rgb_ood.mp4', to8b(rgbs), fps=10, quality=8)
-                        imageio.mimwrite(moviebase + 'disp_ood.mp4', to8b(disps), fps=10, quality=8)
-                    elif args.rotate_render:
-                        imageio.mimwrite(moviebase + 'rgb_rotate_{}.mp4'.format(np.mean(mses)), to8b(rgbs), fps=10, quality=8)
-                        imageio.mimwrite(moviebase + 'disp_rotate_{}.mp4', to8b(disps), fps=10, quality=8)
-                    elif args.camera_render:
-                        imageio.mimwrite(moviebase + 'rgb_camera_start_{}.mp4'.format(np.mean(mses)), to8b(rgbs), fps=10, quality=8)
-                        imageio.mimwrite(moviebase + 'disp_camera_start_{}.mp4', to8b(disps), fps=10, quality=8)
-                        assert False
-                    elif args.camera_render_after:
-                        imageio.mimwrite(moviebase + 'rgb_camera_after_{}.mp4'.format(np.mean(mses)), to8b(rgbs), fps=10, quality=8)
-                        imageio.mimwrite(moviebase + 'disp_camera_after_{}.mp4', to8b(disps), fps=10, quality=8)
-                        assert False
-                    else:
-                        imageio.mimwrite(moviebase + 'rgb_linear_{}.mp4'.format(np.mean(mses)), to8b(rgbs), fps=10, quality=8)
-                        # imageio.mimwrite(moviebase + 'disp_linear.mp4', to8b(disps / np.max(disps)), fps=10, quality=8)
-                        imageio.mimwrite(moviebase + 'disp_linear.mp4', to8b(disps), fps=10, quality=8)
-
-                    if args.velocity:
-                        imageio.mimwrite(moviebase + 'vel_linear.mp4', to8b(accs), fps=10, quality=8)
-
-                assert False
-
-            elif args.dataset_type == "dynamic":
-                # render_images = dataset.render_images
-                with torch.no_grad():
-                    rgbs, disps, accs, mses = render_path(render_poses, render_timesteps, hwf, args.chunk, render_kwargs_test)
-                # rgbs_new = []
-                # for rgb, im in zip(rgbs, render_images):
-                #     rgb = np.concatenate([rgb, im], axis=1)
-                #     rgbs_new.append(rgb)
-
-                # rgbs = rgbs_new
-
-                moviebase = os.path.join(basedir, expname, '{}_spiral_{:06d}_'.format(expname, i))
-                imageio.mimwrite(moviebase + 'rgb_linear.mp4', to8b(rgbs), fps=8, quality=8)
-                imageio.mimwrite(moviebase + 'disp_linear.mp4', to8b(disps), fps=8, quality=8)
-
-                if args.velocity:
-                    imageio.mimwrite(moviebase + 'vel_linear.mp4', to8b(accs), fps=8, quality=8)
-            else:
-                with torch.no_grad():
                     # images_select = images[-20:].detach().cpu().numpy()
                     rgbs, disps, accs, mses = render_path(render_poses, render_timesteps, hwf, args.chunk, render_kwargs_test, velocity=args.velocity)
 
@@ -1930,69 +1455,6 @@ def train():
 
                 if args.velocity:
                     imageio.mimwrite(moviebase + 'vel_linear.mp4', to8b(accs), fps=10, quality=8)
-
-        # assert False
-            # if args.use_viewdirs:
-            #     render_kwargs_test['c2w_staticcam'] = render_poses[0][:3,:4]
-            #     with torch.no_grad():
-            #         rgbs_still, _ = render_path(render_poses, hwf, args.chunk, render_kwargs_test)
-            #     render_kwargs_test['c2w_staticcam'] = None
-            #     imageio.mimwrite(moviebase + 'rgb_still.mp4', to8b(rgbs_still), fps=30, quality=8)
-
-        # if True:
-        # if i%args.f==0 and i > 0:
-        # # if i%args.i_testset==0:
-        #     testsavedir = os.path.join(basedir, expname, 'testset_{:06d}'.format(i))
-        #     os.makedirs(testsavedir, exist_ok=True)
-        #     print('test poses shape', poses[i_test].shape)
-        #     with torch.no_grad():
-        #         render_path(torch.Tensor(poses[i_test]).to(device), torch.Tensor(timesteps[i_test]).to(device), hwf, args.chunk, render_kwargs_test, gt_imgs=images[i_test], savedir=testsavedir)
-        #     print('Saved test set')
-
-
-
-        """
-        if i%args.i_print==0 or i < 10:
-
-            print(expname, i, psnr.numpy(), loss.numpy(), global_step.numpy())
-            print('iter time {:.05f}'.format(dt))
-            with tf.contrib.summary.record_summaries_every_n_global_steps(args.i_print):
-                tf.contrib.summary.scalar('loss', loss)
-                tf.contrib.summary.scalar('psnr', psnr)
-                tf.contrib.summary.histogram('tran', trans)
-                if args.N_importance > 0:
-                    tf.contrib.summary.scalar('psnr0', psnr0)
-
-
-            if i%args.i_img==0:
-
-                # Log a rendered validation view to Tensorboard
-                img_i=np.random.choice(i_val)
-                target = images[img_i]
-                pose = poses[img_i, :3,:4]
-                with torch.no_grad():
-                    rgb, disp, acc, extras = render(H, W, focal, chunk=args.chunk, c2w=pose,
-                                                        **render_kwargs_test)
-
-                psnr = mse2psnr(img2mse(rgb, target))
-
-                with tf.contrib.summary.record_summaries_every_n_global_steps(args.i_img):
-
-                    tf.contrib.summary.image('rgb', to8b(rgb)[tf.newaxis])
-                    tf.contrib.summary.image('disp', disp[tf.newaxis,...,tf.newaxis])
-                    tf.contrib.summary.image('acc', acc[tf.newaxis,...,tf.newaxis])
-
-                    tf.contrib.summary.scalar('psnr_holdout', psnr)
-                    tf.contrib.summary.image('rgb_holdout', target[tf.newaxis])
-
-
-                if args.N_importance > 0:
-
-                    with tf.contrib.summary.record_summaries_every_n_global_steps(args.i_img):
-                        tf.contrib.summary.image('rgb0', to8b(extras['rgb0'])[tf.newaxis])
-                        tf.contrib.summary.image('disp0', extras['disp0'][tf.newaxis,...,tf.newaxis])
-                        tf.contrib.summary.image('z_std', extras['z_std'][tf.newaxis,...,tf.newaxis])
-        """
 
         global_step += 1
         i += 1
