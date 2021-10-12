@@ -4,7 +4,7 @@
 ### Datasets
 
 The pouring dataset used for experiments can be download [here]("https://www.dropbox.com/s/bnnjixu1ihyxwn3/pouring_dataset.tar.gz?dl=0") and the iGibson dataset used in 
-experiments can be downloaded [here]("https://www.dropbox.com/s/bnnjixu1ihyxwn3/pouring_dataset.tar.gz?dl=0")
+experiments can be downloaded [here]("https://www.dropbox.com/s/iu12rz0emjp5ija/gibson_dataset.tar?dl=0")
 
 ### Pouring Dataset
 
