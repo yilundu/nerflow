@@ -8,7 +8,7 @@ experiments can be downloaded [here]("")
 
 ### Pouring Dataset
 
-Please download and extract each dataset at data/nerf\_synthetic/. Please use the following command to run 
+Please download and extract each dataset at data/nerf\_synthetic/. Please use the following command to train 
 
 ```
 python run_nerf.py --config=configs/pour_baseline.txt

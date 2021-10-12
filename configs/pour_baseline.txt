@@ -1,0 +1,18 @@
+expname = pouring_dataset
+basedir = ./logs
+datadir = ./data/nerf_synthetic/pouring_dataset
+dataset_type = blender
+pouring = True
+velocity = False
+unsup_velocity = False
+
+half_res = False
+
+N_samples = 64
+N_importance = 64
+
+use_viewdirs = True
+
+white_bkgd = True
+
+N_rand = 512

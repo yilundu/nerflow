@@ -701,26 +701,19 @@ def train():
 
     elif args.dataset_type == 'blender':
 
-        dataset = PouringDataset(args.datadir, args)
-
-        train_dataloader = DataLoader(dataset, num_workers=8, batch_size=16, shuffle=True, pin_memory=False, collate_fn=dataset.collate_fn, drop_last=False)
-        # train_dataloader = DataLoader(dataset, num_workers=0, batch_size=64, shuffle=True, pin_memory=False, collate_fn=dataset.collate_fn, drop_last=False)
-        render_poses = dataset.render_poses
-        render_timesteps = dataset.render_timesteps
-        hwf = dataset.hwf
-        # if args.optical_flow:
-        #     images, poses, render_poses, render_timesteps, hwf, i_split, timesteps, keypoints, keypoints_timestep, keypoints_pose, depths = load_blender_data(args.datadir, args, args.half_res, args.testskip)
-        #     keypoints = np.array(keypoints)
-        #     keypoints_timestep = np.array(keypoints_timestep)
-        #     keypoints_pose = np.array(keypoints_pose)
-        # elif args.scene_flow or args.velocity:
-        #     images, poses, render_poses, render_timesteps, hwf, i_split, timesteps, locations, locations_timestep, bounds, depths = load_blender_data(args.datadir, args, args.half_res, args.testskip)
-        #     locations = np.array(locations)
-        #     locations_timestep = np.array(locations_timestep)
-        # else:
-        #     images, poses, render_poses, render_timesteps, hwf, i_split, timesteps, depths = load_blender_data(args.datadir, args, args.half_res, args.testskip)
+        if args.optical_flow:
+            images, poses, render_poses, render_timesteps, hwf, i_split, timesteps, keypoints, keypoints_timestep, keypoints_pose, depths = load_blender_data(args.datadir, args, args.half_res, args.testskip)
+            keypoints = np.array(keypoints)
+            keypoints_timestep = np.array(keypoints_timestep)
+            keypoints_pose = np.array(keypoints_pose)
+        elif args.scene_flow or args.velocity:
+            images, poses, render_poses, render_timesteps, hwf, i_split, timesteps, locations, locations_timestep, bounds, depths = load_blender_data(args.datadir, args, args.half_res, args.testskip)
+            locations = np.array(locations)
+            locations_timestep = np.array(locations_timestep)
+        else:
+            images, poses, render_poses, render_timesteps, hwf, i_split, timesteps, depths = load_blender_data(args.datadir, args, args.half_res, args.testskip)
         # print('Loaded blender', images.shape, render_poses.shape, hwf, args.datadir)
-        #i_train, i_val, i_test = i_split
+        i_train, i_val, i_test = i_split
 
         if args.pouring:
             near = 0.
@@ -730,6 +723,10 @@ def train():
             far = 8.
         args.white_bkgd = False
 
+        if args.white_bkgd:
+            images = images[...,:3]*images[...,-1:] + (1.-images[...,-1:])
+        else:
+            images = images[...,:3]
 
     elif args.dataset_type == 'gibson':
         if args.optical_flow:
@@ -843,6 +840,7 @@ def train():
         # else:
         rays = np.stack([get_rays_np(H, W, focal, p) for i, p in enumerate(poses[:,:3,:4])], 0) # [N, ro+rd, H, W, 3]
         print('done, concats')
+
         rays_rgb = np.concatenate([rays, images[:,None]], 1) # [N, ro+rd+rgb, H, W, 3]
         rays_rgb = np.transpose(rays_rgb, [0,2,3,1,4]) # [N, H, W, ro+rd+rgb, 3]
         rays_rgb = np.stack([rays_rgb[i] for i in i_train], 0) # train images only
