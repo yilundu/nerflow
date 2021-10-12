@@ -3,8 +3,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 
-# TODO: remove this dependency
-# from torchsearchsorted import searchsorted
 from torch import searchsorted
 
 
@@ -76,12 +74,9 @@ class Velocity(nn.Module):
         super(Velocity, self).__init__()
         self.pts_linears = nn.ModuleList(
             [nn.Linear(4, W)] + [nn.Linear(W, W) for i in range(4)])
-        # self.pts_linears = pts_linears
-        # self.pts_linears = base
         self.sin_init = sin_init
         self.zero_vel = zero_vel
 
-        # self.velocity_linear_1 = nn.Linear(W, W)
         self.velocity_linear_2 = nn.Linear(W, 3)
 
         self.embed_fn = embed_fn
@@ -93,7 +88,6 @@ class Velocity(nn.Module):
             T_batch = t[:, None].repeat(batch_size, 1)
             sign = torch.ones(batch_size).to(inp.device)
         else:
-            # sign = ((T_batch[:, 1] > T_batch[:, 0]).float() - 0.5) * 2
             sign = torch.ones(T_batch.size(0)).to(inp.device)
             T_batch = T_batch[:, :1] + t
 
@@ -120,10 +114,7 @@ class Velocity(nn.Module):
             else:
                 h = F.relu(h)
 
-            # if i in self.skips:
-            #     h = torch.cat([input_pts, h], -1)
 
-        # velocity = self.velocity_linear_2(F.relu(self.velocity_linear_1(h)))
         velocity = self.velocity_linear_2(h)
 
         if self.zero_vel:
