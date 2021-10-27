@@ -19,6 +19,7 @@ from run_nerf_helpers import *
 
 from load_blender import load_blender_data
 from load_gibson import load_gibson_data
+from load_llff_video import load_video_data
 
 from skimage.io import imread
 from skimage.transform import resize
@@ -681,22 +682,29 @@ def train():
 
     # Load data
 
-    if args.dataset_type == 'llff':
-        if args.fern:
-            dataset = FernDataset(args.datadir, args)
-            train_dataloader = DataLoader(dataset, num_workers=4, batch_size=4, shuffle=True, pin_memory=False, collate_fn=dataset.collate_fn, drop_last=False)
+    if args.dataset_type == 'video':
+        if args.optical_flow:
+            bds, images, poses, render_poses, render_timesteps, hwf, i_split, timesteps, keypoints, keypoints_timestep, keypoints_pose, depths = load_video_data(args)
+            keypoints = np.array(keypoints)
+            keypoints_timestep = np.array(keypoints_timestep)
+            keypoints_pose = np.array(keypoints_pose)
+        elif args.scene_flow or args.velocity:
+            bds, images, poses, render_poses, render_timesteps, hwf, i_split, timesteps, locations, locations_timestep, bounds, depths = load_video_data(args)
+            locations = np.array(locations)
+            locations_timestep = np.array(locations_timestep)
         else:
-            dataset = SFMDataset(args.datadir, args)
-            train_dataloader = DataLoader(dataset, num_workers=8, batch_size=16, shuffle=True, pin_memory=False, collate_fn=dataset.collate_fn, drop_last=False)
-        hwf = dataset.hwf
+            bds, images, poses, render_poses, render_timesteps, hwf, i_split, timesteps, depths = load_video_data(args)
+        print('Loaded blender', images.shape, render_poses.shape, hwf, args.datadir)
 
-        render_poses = dataset.render_poses
-        render_timesteps = dataset.render_timesteps
+        i_train = i_split[0]
+        near, far = bds[0, 0], bds[0, 1]
 
-        print('DEFINING BOUNDS')
-        near = dataset.bound_min.min()
-        far = dataset.bound_max.max()
-        print('NEAR FAR', near, far)
+        args.white_bkgd = False
+
+        if args.white_bkgd:
+            images = images[...,:3]*images[...,-1:] + (1.-images[...,-1:])
+        else:
+            images = images[...,:3]
 
 
     elif args.dataset_type == 'blender':
@@ -1405,9 +1413,9 @@ def train():
                 }, path)
                 print('Saved checkpoints at', path)
 
-        # if i%args.i_video==0 and i > 0:
+        if i%args.i_video==0 and i > 0:
         # if i%args.i_video==0:
-        if True:
+        # if True:
             # Turn on testing mode
 
             rgbs = []
