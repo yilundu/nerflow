@@ -320,53 +320,53 @@ def estimate(tenFirst, tenSecond):
 
 if __name__ == '__main__':
 
-    # base_path = "/data/vision/billf/scratch/yilundu/nerf-pytorch/data/nerf_synthetic/pouring_camera_1012_stereo/train"
+    base_path = "/data/vision/billf/scratch/yilundu/nerf-pytorch/data/nerf_synthetic/pouring_camera_1012_stereo/train"
     # base_path = "/data/vision/billf/scratch/yilundu/nerf-pytorch/data/nerf_llff_data/consistent_depth/images_5"
-    # for i in range(1, 1000):
-    #     string_first = osp.join(base_path, "r_{}.png".format(i))
-    #     string_second = osp.join(base_path, "r_{}_flow.png".format(i))
-    #     tenFirst = torch.FloatTensor(numpy.ascontiguousarray(numpy.array(PIL.Image.open(string_first))[:, :, ::-1].transpose(2, 0, 1).astype(numpy.float32) * (1.0 / 255.0)))
-    #     tenSecond = torch.FloatTensor(numpy.ascontiguousarray(numpy.array(PIL.Image.open(string_second))[:, :, ::-1].transpose(2, 0, 1).astype(numpy.float32) * (1.0 / 255.0)))
+    for i in range(1, 1000):
+        string_first = osp.join(base_path, "r_{}.png".format(i))
+        string_second = osp.join(base_path, "r_{}_flow.png".format(i))
+        tenFirst = torch.FloatTensor(numpy.ascontiguousarray(numpy.array(PIL.Image.open(string_first))[:, :, ::-1].transpose(2, 0, 1).astype(numpy.float32) * (1.0 / 255.0)))
+        tenSecond = torch.FloatTensor(numpy.ascontiguousarray(numpy.array(PIL.Image.open(string_second))[:, :, ::-1].transpose(2, 0, 1).astype(numpy.float32) * (1.0 / 255.0)))
 
-    #     tenOutput = estimate(tenFirst, tenSecond)
-    #     im = tenOutput.numpy().transpose(1, 2, 0)
+        tenOutput = estimate(tenFirst, tenSecond)
+        im = tenOutput.numpy().transpose(1, 2, 0)
 
-    #     np.save(osp.join(base_path, "flow_{}.npy".format(i)), im)
+        np.save(osp.join(base_path, "flow_{}.npy".format(i)), im)
 
     # Compute optical for monocular video
     # base_path = "/data/vision/billf/scratch/yilundu/nerf-pytorch/data/nerf_llff_data/consistent_depth/images_5"
     # base_path = "/data/vision/billf/scratch/yilundu/consistent_depth/results/person/color_down_png"
     # base_path = "/data/vision/billf/scratch/yilundu/consistent_depth/data/videos/ayush/images_2"
-    base_path = "/data/vision/billf/scratch/yilundu/nerf-pytorch/data/nerf_synthetic/standup/train"
-    for i in range(1, 64):
+    # base_path = "/data/vision/billf/scratch/yilundu/nerf-pytorch/data/nerf_synthetic/standup/train"
+    # for i in range(1, 64):
 
-        flow_idxs = []
+    #     flow_idxs = []
 
-        while len(flow_idxs) < 10:
-            offset = random.randint(-10, 10)
-            flow_idx = i + offset
+    #     while len(flow_idxs) < 10:
+    #         offset = random.randint(-10, 10)
+    #         flow_idx = i + offset
 
-            flow_idx = min(max(flow_idx, 1), 63)
+    #         flow_idx = min(max(flow_idx, 1), 63)
 
-            if flow_idx == i:
-                continue
+    #         if flow_idx == i:
+    #             continue
 
-            if flow_idx in flow_idxs:
-                continue
+    #         if flow_idx in flow_idxs:
+    #             continue
 
-            flow_idxs.append(flow_idx)
+    #         flow_idxs.append(flow_idx)
 
 
-        for flow_idx in flow_idxs:
-            string_first = osp.join(base_path, "r_{:03d}.png".format(i))
-            string_second = osp.join(base_path, "r_{:03d}.png".format(flow_idx))
-            tenFirst = torch.FloatTensor(numpy.ascontiguousarray(numpy.array(PIL.Image.open(string_first))[:, :, ::-1].transpose(2, 0, 1).astype(numpy.float32) * (1.0 / 255.0)))
-            tenSecond = torch.FloatTensor(numpy.ascontiguousarray(numpy.array(PIL.Image.open(string_second))[:, :, ::-1].transpose(2, 0, 1).astype(numpy.float32) * (1.0 / 255.0)))
+    #     for flow_idx in flow_idxs:
+    #         string_first = osp.join(base_path, "r_{:03d}.png".format(i))
+    #         string_second = osp.join(base_path, "r_{:03d}.png".format(flow_idx))
+    #         tenFirst = torch.FloatTensor(numpy.ascontiguousarray(numpy.array(PIL.Image.open(string_first))[:, :, ::-1].transpose(2, 0, 1).astype(numpy.float32) * (1.0 / 255.0)))
+    #         tenSecond = torch.FloatTensor(numpy.ascontiguousarray(numpy.array(PIL.Image.open(string_second))[:, :, ::-1].transpose(2, 0, 1).astype(numpy.float32) * (1.0 / 255.0)))
 
-            tenOutput = estimate(tenFirst, tenSecond)
-            im = tenOutput.numpy().transpose(1, 2, 0)
+    #         tenOutput = estimate(tenFirst, tenSecond)
+    #         im = tenOutput.numpy().transpose(1, 2, 0)
 
-            np.save(osp.join(base_path, "flow_{:06d}_{:06d}.npy".format(i, flow_idx)), im)
+    #         np.save(osp.join(base_path, "flow_{:06d}_{:06d}.npy".format(i, flow_idx)), im)
 
     # objOutput.close()
 # end
