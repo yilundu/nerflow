@@ -35,3 +35,18 @@ to train with flow consistency
 ```
 python run_nerf.py --config=configs/gibson_baseline_flow.txt
 ```
+
+### Citing our Paper
+
+If you find this repo helpful, please consider citing
+
+```	
+ @inproceedings{du2021nerflow,
+                      author    = {Yilun Du and Yinan Zhang and Hong-Xing Yu 
+                                   and Joshua B. Tenenbaum and Jiajun Wu},
+                      title     = {Neural Radiance Flow for 4D View Synthesis and Video Processing},
+                      year      = {2021},
+                      booktitle   = {Proceedings of the IEEE/CVF International Conference
+                                     on Computer Vision},
+                    }
+```	
