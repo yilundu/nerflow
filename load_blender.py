@@ -278,7 +278,11 @@ def load_blender_data(basedir, args, half_res=False, testskip=1):
 
                     # p1, st, err = cv2.calcOpticalFlowPyrLK(img, img_next, p0, None, **lk_params)
                     # flow = cv2.calcOpticalFlowFarneback(img, img_next, None, 0.5, 3, 15, 3, 5, 1.2, 0)
-                    flow_fname = os.path.join(basedir, osp.split(frame['file_path'])[0], "flow_{}.npy".format(i // 2))
+                    fp = frame['file_path']
+                    fp = fp.split("/")[1].split(".")[0]
+                    frame_num = int(fp[2:])
+
+                    flow_fname = os.path.join(basedir, osp.split(frame['file_path'])[0], "flow_{}.npy".format(frame_num))
                     flow = np.load(flow_fname)
                     f = 8
 
