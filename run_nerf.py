@@ -967,40 +967,131 @@ def train():
             ##########################
             # Code for integrating scene flow equal to distance
 
-            diff, t_step, ix, reverse = generate_data(loc_t_before, loc_t_after)
+            if args.dataset_type == "video":
+                network_query_fn_pt = render_kwargs_train['network_query_fn_pt']
+                raw2alpha = lambda raw, dists, act_fn=F.relu: 1.-torch.exp(-act_fn(raw) * dists)
 
-            # Old code assuming ground truth object coordinates
-            # loc_offset = (torch.rand(loc_before.size(1), 100, loc_before.size(2)).to(bounds.device) - 0.5) * bounds[ix, :, None]
-            # loc_before_i = loc_before[ix, :, None] + loc_offset
-            # loc_after_i = loc_after[ix, :, None] + loc_offset
-            # t_batch = loc_t_before[ix, None, :, :].repeat(loc_offset.size(1), 1, 1)
+                loc_before_i = loc_before[ix, :].to(device)
+                loc_after_i = loc_after[ix, :].to(device)
 
-            loc_offset = (torch.rand(loc_before.size(1), loc_before.size(2)).to(bounds.device) - 0.5) * bounds[ix]
-            loc_before_i = loc_before[ix, :] + loc_offset
-            loc_after_i = loc_after[ix, :] + loc_offset
-            t_batch = loc_t_before[ix]
+                select_idx = torch.randperm(loc_before_i.size(0))[:512]
+                rays_o_before, rays_d_before = loc_before_i[select_idx, :3], loc_before_i[select_idx, 3:]
+                rays_o_after, rays_d_after = loc_after_i[select_idx, :3], loc_after_i[select_idx, 3:]
+                t_batch = torch.stack([loc_t_before[ix][select_idx], loc_t_after[ix][select_idx]], dim=0).view(-1)
 
-            # import pdb
-            # pdb.set_trace()
-            # loc_offset = (torch.rand(loc_before.size(0), loc_before.size(1)).to(bounds.device) - 0.5) * bounds[ix]
-            # loc_before_i = loc_before + loc_offset
-            # loc_after_i = loc_after + loc_offset
-            # t_batch = loc_t_before
+                bounds_i = bounds[ix][select_idx]
 
-            loc_before_i = loc_before_i.view(-1, loc_before_i.size(-1))
-            loc_after_i = loc_after_i.view(-1, loc_after_i.size(-1))
+                rays_o = torch.cat([rays_o_before, rays_o_after], dim=0)
+                rays_d = torch.cat([rays_d_before, rays_d_after], dim=0)
 
-            loc_before_i = loc_before_i.to(bounds.device)
-            loc_after_i = loc_after_i.to(bounds.device)
-            t_step = t_step.to(bounds.device)
-            t_batch = t_batch.view(-1, t_batch.size(-1))
-            # t_batch = t_batch.view(-1, 1)
-            # t_batch = t_batch.view(-1)
-            f_options = {'T_batch': t_batch}
-            ode_solution = odeint_adjoint(velocity_module, loc_before_i, t_step, method=ode_solver, rtol=rtol, atol=atol, options={}, f_options=f_options)
+                t_vals = torch.linspace(0., 1., steps=args.N_samples).to(rays_d.device)
+                z_vals = near * (1.-t_vals) + far * (t_vals)
+                model = render_kwargs_train['network_fn']
+                model_fine = render_kwargs_train['network_fine']
+                N_rays = rays_o.shape[0]
+                z_vals = z_vals.expand([N_rays, args.N_samples])
 
-            # Enforce correspondance across timesteps
-            scene_loss = 10.0 * torch.norm(ode_solution[1:2] - loc_after_i, p=2, dim=2).mean()
+                mids = .5 * (z_vals[...,1:] + z_vals[...,:-1])
+                upper = torch.cat([mids, z_vals[...,-1:]], -1)
+                lower = torch.cat([z_vals[...,:1], mids], -1)
+                t_rand = torch.rand(z_vals.shape).to(rays_d.device)
+                z_vals = lower + (upper - lower) * t_rand
+
+                dists = z_vals[...,1:] - z_vals[...,:-1]
+                dists = torch.cat([dists, torch.Tensor([1e10]).expand(dists[...,:1].shape).to(dists.device)], -1)
+                dists = dists * torch.norm(rays_d[...,None,:], dim=-1)
+
+                pts = torch.cat([rays_o[:, None, :3] + rays_d[:, None, :] * z_vals[..., :, None], t_batch[:, None, None].repeat(1, args.N_samples, 1)], dim=-1)
+
+                raw = network_query_fn_pt(pts, model)
+                alpha = raw2alpha(raw[...,3], dists)  # [N_rays, N_samples]
+
+                weights = alpha * torch.cumprod(torch.cat([torch.ones((alpha.shape[0], 1)).to(dists.device), 1.-alpha + 1e-10], -1), -1)[:, :-1]
+
+                z_vals_mid = .5 * (z_vals[...,1:] + z_vals[...,:-1])
+                z_samples = sample_pdf(z_vals_mid, weights[...,1:-1], args.N_samples, det=False)
+
+                z_samples = z_samples.detach()
+
+                z_vals, _ = torch.sort(torch.cat([z_vals, z_samples], -1), -1)
+
+                dists = z_vals[...,1:] - z_vals[...,:-1]
+                dists = torch.cat([dists, torch.Tensor([1e10]).expand(dists[...,:1].shape).to(dists.device)], -1)  # [N_rays, N_samples]
+
+                dists = dists * torch.norm(rays_d[...,None,:], dim=-1)
+                pts = torch.cat([rays_o[:, None, :3] + rays_d[:, None, :] * z_vals[..., :, None], t_batch[:, None, None].repeat(1, dists.size(1), 1)], dim=-1)
+
+                raw = network_query_fn_pt(pts, model_fine)
+                raws = raw[..., 3]
+                alpha = raw2alpha(raw[...,3], dists)  # [N_rays, N_samples]
+                weights = alpha * torch.cumprod(torch.cat([torch.ones((alpha.shape[0], 1)).to(dists.device), 1.-alpha + 1e-10], -1), -1)[:, :-1]
+                surface_pt = (weights[:, :, None] * pts).sum(dim=1)
+
+                surface_pt = surface_pt.detach()
+                s = surface_pt.size()
+
+                nrays = s[0] // 2
+
+                loc_before_i = surface_pt[:nrays, :3].detach()
+                loc_after_i = surface_pt[nrays:, :3].detach()
+
+                loc_offset = (torch.rand(*loc_before_i.size()).to(bounds.device) - 0.5) * bounds_i
+
+                loc_before_i = loc_before_i + loc_offset
+                loc_after_i = loc_after_i + loc_offset
+
+                t_batch = t_batch[:nrays].view(-1, 1)
+
+                f_options = {'T_batch': t_batch, 'reverse': reverse}
+                ode_solution = odeint_adjoint(velocity_module, loc_before_i, t_step, method=ode_solver, rtol=rtol, atol=atol, options={}, f_options=f_options)
+
+                diff = torch.abs(loc_after_i - loc_before_i).mean(dim=-1)
+                mask_static = diff < 0.01
+
+                loc_after_i[mask_static] = loc_before_i[mask_static]
+
+                dist = torch.norm(ode_solution[1:2] - loc_after_i, p=2, dim=2).squeeze()
+                mask_static = mask_static.float()
+                # dist = dist * mask_static + dist * (1 - mask_static) * 10
+
+                # Enforce correspondance across timesteps
+
+                scene_loss = 100.0 * dist.mean()
+            else:
+                diff, t_step, ix, reverse = generate_data(loc_t_before, loc_t_after)
+
+                # Old code assuming ground truth object coordinates
+                # loc_offset = (torch.rand(loc_before.size(1), 100, loc_before.size(2)).to(bounds.device) - 0.5) * bounds[ix, :, None]
+                # loc_before_i = loc_before[ix, :, None] + loc_offset
+                # loc_after_i = loc_after[ix, :, None] + loc_offset
+                # t_batch = loc_t_before[ix, None, :, :].repeat(loc_offset.size(1), 1, 1)
+
+                loc_offset = (torch.rand(loc_before.size(1), loc_before.size(2)).to(bounds.device) - 0.5) * bounds[ix]
+                loc_before_i = loc_before[ix, :] + loc_offset
+                loc_after_i = loc_after[ix, :] + loc_offset
+                t_batch = loc_t_before[ix]
+
+                # import pdb
+                # pdb.set_trace()
+                # loc_offset = (torch.rand(loc_before.size(0), loc_before.size(1)).to(bounds.device) - 0.5) * bounds[ix]
+                # loc_before_i = loc_before + loc_offset
+                # loc_after_i = loc_after + loc_offset
+                # t_batch = loc_t_before
+
+                loc_before_i = loc_before_i.view(-1, loc_before_i.size(-1))
+                loc_after_i = loc_after_i.view(-1, loc_after_i.size(-1))
+
+                loc_before_i = loc_before_i.to(bounds.device)
+                loc_after_i = loc_after_i.to(bounds.device)
+                t_step = t_step.to(bounds.device)
+                t_batch = t_batch.view(-1, t_batch.size(-1))
+                # t_batch = t_batch.view(-1, 1)
+                # t_batch = t_batch.view(-1)
+                f_options = {'T_batch': t_batch}
+                ode_solution = odeint_adjoint(velocity_module, loc_before_i, t_step, method=ode_solver, rtol=rtol, atol=atol, options={}, f_options=f_options)
+
+                # Enforce correspondance across timesteps
+                scene_loss = 10.0 * torch.norm(ode_solution[1:2] - loc_after_i, p=2, dim=2).mean()
 
             # Generate rays to cast consistency over
             network_query_fn_pt = render_kwargs_train['network_query_fn_pt']
